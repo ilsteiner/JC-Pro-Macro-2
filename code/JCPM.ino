@@ -34,6 +34,9 @@ long newBeatTime = 0;
 long oldBeatTime = 0;
 bool beatOn = 0;
 
+int defaultVolAfterMute = 50;
+bool isMuted = false;
+
 int fanSpeed = 0;
 bool fanPulse = 0;
 long newPulseTime = 0;
@@ -41,7 +44,7 @@ long oldPulseTime = 0;
 int fanRPM = 0;
 char toneNote;
 
-int modeArray[] = {0, 1, 3}; //adjust this array to modify sequence of modes - as written, change to {0, 1, 2, 3, 4, 5} to access all modes
+int modeArray[] = {0, 1}; //adjust this array to modify sequence of modes - as written, change to {0, 1, 2, 3, 4, 5} to access all modes
 int inputModeIndex = 0;
 int modeArrayLength = (sizeof(modeArray) / sizeof(modeArray[0]));
 
@@ -119,8 +122,9 @@ void setup() {
   display.invertDisplay(0);
   
 Mouse.begin();
-Keyboard.begin();
-//BootKeyboard.begin(); - BootKeyboard use appears to give problems w/ Macintosh
+//Keyboard.begin();
+Consumer.begin();
+BootKeyboard.begin(); //BootKeyboard use appears to give problems w/ Macintosh
 
 
 //NeoPixel setup=========================================
@@ -162,7 +166,7 @@ void loop() {
     oldPosition = myEnc.read();
   }
 
-//========select upload mode==================
+  //========select upload mode==================
     
   // Jump into upload mode for mode select and lower-right button
   if (SW9 == 0 && SW10 == 0) {
@@ -170,7 +174,7 @@ void loop() {
     delay(3600000); // I don't know why, but this delay allows to simply upload code.
   }
 
-//=========change mode=================
+  //=========change mode=================
 
    if (SW10 == 0){
       if (inputModeIndex < modeArrayLength){
@@ -187,30 +191,39 @@ void loop() {
       delay(150);
     }
 
-//======select input mode:=======
+  //======select input mode:=======
+  switch(inputMode) {
+    case 0:
+      pixels.setPixelColor(LEDCircle[LEDLight], pixels.Color(10, 0, 0));
+      pixels.show(); // Show results
+      standardMode();
+      break;
+    case 1:
+      jiggler();
+      break;
+    case 2:
+      slitherIO();
+      break;
+    case 3:
+      pixels.setPixelColor(LEDCircle[LEDLight], pixels.Color(0, 10, 0));
+      pixels.show(); // Show results
+      FCPX();
+      break;
+    case 4:
+      fan();
+    case 5:
+      music();
+    case 6:
+      textInput();
+    default:
+      Serial.println("Invalid mode.");
+  }
 
-if (inputMode == 0) {
-  pixels.setPixelColor(LEDCircle[LEDLight], pixels.Color(10, 0, 0));
-  pixels.show(); // Show results
-  volume();  
+  //Serial.println(inputMode);
 }
-if (inputMode == 1) jiggler();
-if (inputMode == 2) slitherIO();
-if (inputMode == 3) {
-  pixels.setPixelColor(LEDCircle[LEDLight], pixels.Color(0, 10, 0));
-  pixels.show(); // Show results
-  FCPX();
-}
-if (inputMode == 4) fan();
-if (inputMode == 5) music();
-if (inputMode == 6) textInput();
 
-//Serial.println(inputMode);
-
-}
-
-void volume(){
-
+// Mode 0
+void standardMode(){
   if (increment == 1) {
         Consumer.write(MEDIA_VOLUME_UP);
         if (LEDLight == 5) LEDLight = 0;
@@ -234,60 +247,70 @@ void volume(){
         decrement = 0;
         //delay(10);
       }
-  if (SW6 == 0){ //tab to next browser tab Firefox or Chrome
-        Keyboard.press(KEY_LEFT_CTRL);
-        Keyboard.press(KEY_TAB);          
-        Keyboard.releaseAll();
-        delay(50);
-      }
-  if (SW5 == 0){ //tab to previous browser tab Firefox or Chrome
-        Keyboard.press(KEY_LEFT_SHIFT);
-        Keyboard.press(KEY_LEFT_CTRL);
-        Keyboard.press(KEY_TAB);
-        Keyboard.releaseAll();
-        delay(50);
-      }
-  if (SW3 == 0) {
-        Consumer.write(MEDIA_PLAY_PAUSE); 
-        delay(100);
-      }
-  if (SW4 == 0) {
-        Consumer.write(MEDIA_NEXT);
-        delay(50);
-      }
-  if (SW2 == 0) {
-        Consumer.write(MEDIA_PREVIOUS);
-        delay(50);
-      }
-  if (SW1 == 0) { //Emulate keyboard enter button when encoder knob is pressed down:
-      Keyboard.press(KEY_ENTER);
-      Keyboard.release(KEY_ENTER);
-      delay(50);
-    }
-  if ((SW7 == 0) && (underLight == 0)) {        
-    underLight = 1;
-    for(int i=8; i<12; i++){
-    pixels.setPixelColor(i, pixels.Color(255, 0, 0));
-    }
-    pixels.show(); // Show results
-    delay(100);
-  }
-  else if ((SW7 == 0) && (underLight == 1)) {        
-    underLight = 0;
-    for(int i=8; i<12; i++){
-    pixels.setPixelColor(i, pixels.Color(0, 0, 0));
-    }
-    pixels.show(); // Show results
-    delay(100);
-  }  
-  if ((SW8 == 0)||(SW9 == 0)){
-    fan();
-  }
 
+  // Encoder knob volume mute, hacky because there's no good way to do it
+  if (SW1 == 0) {
+    if(isMuted) {
+      for(int i=0; i < defaultVolAfterMute/2 ; i++)
+      {
+        Consumer.write(MEDIA_VOLUME_UP);
+      }
+      isMuted = false;
+    }
+    else {
+      isMuted = true;
+      for(int i=0; i < 50; i++)
+      {
+        Consumer.write(MEDIA_VOLUME_DOWN);
+      }
+    }
+
+    delay(50);
+  }
+  if (SW2 == 0) {
+    Consumer.write(MEDIA_PLAY_PAUSE); 
+    delay(100);
+  }
+  if (SW3 == 0) {
+    Consumer.write(MEDIA_PREVIOUS);
+    delay(50);
+  }
+  if (SW4 == 0) {
+    Consumer.write(MEDIA_NEXT);
+    delay(50);
+  }
+  // PowerToys video conference mute
+  if (SW5 == 0) {
+    Keyboard.press(KEY_LEFT_WINDOWS);
+    Keyboard.press(KEY_LEFT_SHIFT);
+    Keyboard.press(KEY_Q);
+    Keyboard.releaseAll();
+    delay(50);
+  }
+  // Mute mic using default shortcut for Teams and Discord
+  if (SW6 == 0) {
+    Keyboard.press(KEY_LEFT_CTRL);
+    Keyboard.press(KEY_LEFT_SHIFT);
+    Keyboard.press(KEY_M);
+    Keyboard.releaseAll();
+    delay(50);
+  }
+  // Move current Window to next monitor
+  if (SW7 == 0) {
+    Keyboard.press(KEY_LEFT_SHIFT);
+    Keyboard.press(KEY_LEFT_WINDOWS);
+    Keyboard.press(KEY_RIGHT_ARROW);
+    Keyboard.releaseAll();
+    delay(50);
+  }
+  if (SW8 == 0 || SW9 == 0) {
+    Keyboard.write(KEY_PRINT);
+  }
       
-screenVolume();
+screenStandardMode();
 }
 
+// Mode 1
 void jiggler(){ //works with new code
   
   //Serial.print("commence to jiggling");
@@ -312,8 +335,7 @@ void jiggler(){ //works with new code
       //pixels.setPixelColor(8, pixels.Color(yMap, zMap, xMap));                                  
       pixels.show(); // Show results
 
-screenJiggle(); 
-    
+screenJiggle();    
 }
 
 void slitherIO(){ //works with new code
@@ -391,7 +413,7 @@ if (nascar == 1){
 }
 
 
-screenVolume();
+screenStandardMode();
   
 }
 
@@ -635,34 +657,32 @@ void textInput(){
 
 //======================.96" oled screen=======================
 
-void screenVolume(){
+void screenStandardMode(){
   display.setTextSize(1); 
   display.clearDisplay();
   display.setCursor(0,0);
   //display.println("");  
-  display.println("ENCOD|     |TAB+ |LIT");
-  display.println("");
-  display.println("VOL- |VOL+ |TAB- |FN+");
-  display.println("");
-  display.println("BACK |STOP |FORW |FN-");
-  display.println("");  
+  display.println("           MIC -MOVE\n");  
+  display.println("           CAM -DEAD\n");  
+  display.println(" PLAY-PREV-NEXT-PRSC");
+  //display.println("");
   //display.print(increment);
   //display.print(decrement);
   //display.print(" ");
-  display.print(newPosition);
-  display.print(" ");
-  display.print(LEDLight);
-  display.print(" ");
-  display.print(SW1);
-  display.print(SW2);
-  display.print(SW3);
-  display.print(SW4);
-  display.print(SW5);
-  display.print(SW6);
-  display.print(SW7);
-  display.print(SW8);
-  display.print(SW9);
-  display.print(SW10);
+  // display.print(newPosition);
+  // display.print(" ");
+  // display.print(LEDLight);
+  // display.print(" ");
+  // display.print(SW1);
+  // display.print(SW2);
+  // display.print(SW3);
+  // display.print(SW4);
+  // display.print(SW5);
+  // display.print(SW6);
+  // display.print(SW7);
+  // display.print(SW8);
+  // display.print(SW9);
+  // display.print(SW10);
   display.display();
   //Serial.println(SW1);
   //delay(10);
